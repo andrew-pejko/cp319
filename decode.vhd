@@ -1,81 +1,57 @@
-LIBRARY IEEE;
-USE IEEE.STD_LOGIC_1164.ALL;
-USE IEEE.NUMERIC_STD.ALL;
+library IEEE;
+use IEEE.STD_LOGIC_1164.ALL;
+use IEEE.NUMERIC_STD.ALL;
 
-ENTITY InstructionDecoder IS
-    PORT (
-        instruction : IN  STD_LOGIC_VECTOR(31 DOWNTO 0); -- Input machine code
-        decoded_instruction : OUT STRING(1 TO 100) -- Decoded instruction output
+entity decoder is
+    Port (
+        instruction : in std_logic_vector(31 downto 0);  -- 32-bit RV32i instruction
+        opcode      : out std_logic_vector(6 downto 0);  -- Primary opcode field
+        funct3      : out std_logic_vector(2 downto 0);  -- Secondary function field
+        funct7      : out std_logic_vector(6 downto 0);  -- Additional function field
+        rd          : out std_logic_vector(4 downto 0);  -- Destination register
+        rs1         : out std_logic_vector(4 downto 0);  -- Source register 1
+        rs2         : out std_logic_vector(4 downto 0);  -- Source register 2
+        imm         : out std_logic_vector(31 downto 0)  -- Immediate value (varies by instruction)
     );
-END ENTITY;
+end decoder;
 
-ARCHITECTURE Behavioral OF InstructionDecoder IS
-    SIGNAL opcode : STD_LOGIC_VECTOR(6 DOWNTO 0);
-    SIGNAL rd : INTEGER;
-    SIGNAL rs1 : INTEGER;
-    SIGNAL rs2 : INTEGER;
-    SIGNAL funct3 : STD_LOGIC_VECTOR(2 DOWNTO 0);
-    SIGNAL funct7 : STD_LOGIC_VECTOR(6 DOWNTO 0);
-    SIGNAL immediate : INTEGER;
-BEGIN
-    PROCESS(instruction)
-    BEGIN
-        -- Extract fields from the instruction
-        opcode <= instruction(6 DOWNTO 0);
-        rd <= to_integer(unsigned(instruction(11 DOWNTO 7)));
-        rs1 <= to_integer(unsigned(instruction(19 DOWNTO 15)));
-        rs2 <= to_integer(unsigned(instruction(24 DOWNTO 20)));
-        funct3 <= instruction(14 DOWNTO 12);
-        funct7 <= instruction(31 DOWNTO 25);
+architecture Behavioral of decoder is
+begin
+    process(instruction)
+    begin
+        -- Extract fields from the 32-bit instruction
+        opcode <= instruction(6 downto 0);       -- Opcode is the 7 least-significant bits
+        rd     <= instruction(11 downto 7);      -- Destination register
+        funct3 <= instruction(14 downto 12);     -- Function code (3 bits)
+        rs1    <= instruction(19 downto 15);     -- Source register 1
+        rs2    <= instruction(24 downto 20);     -- Source register 2
+        funct7 <= instruction(31 downto 25);     -- Additional function code (7 bits)
+        
+        -- Immediate value decoding based on instruction type
+        case opcode is
+            -- I-Type Instructions (e.g., ADDI)
+            when "0010011" =>   -- Example: ADDI, ORI, ANDI, etc.
+                imm <= std_logic_vector(signed(instruction(31 downto 20)));  -- sign-extended 12-bit immediate
 
-        -- Decode based on opcode
-        CASE opcode IS
-            WHEN "0000011" => -- Load
-                CASE funct3 IS
-                    WHEN "010" => -- LB
-                        decoded_instruction <= "LB x" & INTEGER'IMAGE(rd) & ", 0(x" & INTEGER'IMAGE(rs1) & ")";
-                    WHEN "100" => -- LW
-                        decoded_instruction <= "LW x" & INTEGER'IMAGE(rd) & ", 0(x" & INTEGER'IMAGE(rs1) & ")";
-                    WHEN "000" => -- LBU
-                        decoded_instruction <= "LBU x" & INTEGER'IMAGE(rd) & ", 0(x" & INTEGER'IMAGE(rs1) & ")";
-                    WHEN OTHERS => NULL;
-                END CASE;
+            -- S-Type Instructions (e.g., SW)
+            when "0100011" =>   -- Example: SW, SB, SH
+                imm <= std_logic_vector(signed(instruction(31 downto 25) & instruction(11 downto 7))); -- 12-bit immediate
 
-            WHEN "0100011" => -- Store
-                CASE funct3 IS
-                    WHEN "010" => -- SW
-                        decoded_instruction <= "SW x" & INTEGER'IMAGE(rs2) & ", 0(x" & INTEGER'IMAGE(rs1) & ")";
-                    WHEN OTHERS => NULL;
-                END CASE;
+            -- B-Type Instructions (e.g., BEQ)
+            when "1100011" =>   -- Example: BEQ, BNE, BLT, etc.
+                imm <= std_logic_vector(signed(instruction(31) & instruction(7) & instruction(30 downto 25) & instruction(11 downto 8) & "0"));  -- 13-bit immediate (B-type)
 
-            WHEN "0010011" => -- I-type
-                CASE funct3 IS
-                    WHEN "000" => -- ADDI
-                        immediate <= to_integer(signed(instruction(31 DOWNTO 20)));
-                        decoded_instruction <= "ADDI x" & INTEGER'IMAGE(rd) & ", x" & INTEGER'IMAGE(rs1) & ", " & INTEGER'IMAGE(immediate);
-                    WHEN OTHERS => NULL;
-                END CASE;
+            -- U-Type Instructions (e.g., LUI, AUIPC)
+            when "0110111" | "0010111" => -- LUI or AUIPC
+                imm <= instruction(31 downto 12) & "000000000000"; -- 20-bit immediate
 
-            WHEN "0110011" => -- R-type
-                CASE funct3 IS
-                    WHEN "000" => -- ADD
-                        IF funct7 = "0000000" THEN
-                            decoded_instruction <= "ADD x" & INTEGER'IMAGE(rd) & ", x" & INTEGER'IMAGE(rs1) & ", x" & INTEGER'IMAGE(rs2);
-                        ELSIF funct7 = "0100000" THEN
-                            decoded_instruction <= "SUB x" & INTEGER'IMAGE(rd) & ", x" & INTEGER'IMAGE(rs1) & ", x" & INTEGER'IMAGE(rs2);
-                        END IF;
-                    WHEN "111" => -- AND
-                        decoded_instruction <= "AND x" & INTEGER'IMAGE(rd) & ", x" & INTEGER'IMAGE(rs1) & ", x" & INTEGER'IMAGE(rs2);
-                    WHEN "110" => -- OR
-                        decoded_instruction <= "OR x" & INTEGER'IMAGE(rd) & ", x" & INTEGER'IMAGE(rs1) & ", x" & INTEGER'IMAGE(rs2);
-                    WHEN OTHERS => NULL;
-                END CASE;
+            -- J-Type Instructions (e.g., JAL)
+            when "1101111" =>   -- Example: JAL
+                imm <= std_logic_vector(signed(instruction(31) & instruction(19 downto 12) & instruction(20) & instruction(30 downto 21) & "0")); -- 21-bit immediate
 
-            WHEN "1101111" => -- JAL
-                immediate <= to_integer(signed(instruction(31 DOWNTO 12))); -- Extract immediate
-                decoded_instruction <= "JAL x" & INTEGER'IMAGE(rd) & ", " & INTEGER'IMAGE(immediate);
-
-            WHEN OTHERS => NULL; -- Handle other instruction types as needed
-        END CASE;
-    END PROCESS;
-END ARCHITECTURE;
+            -- Default case for other instructions
+            when others =>
+                imm <= (others => '0');  -- Default to 0 for unsupported instructions
+        end case;
+    end process;
+end Behavioral;

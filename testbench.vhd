@@ -12,9 +12,12 @@ END ENTITY;
 
 ARCHITECTURE Behavioral OF RAM_TB IS
 
-SIGNAL DATAIN,instruction : STD_LOGIC_VECTOR(31 DOWNTO 0):= x"FFFFFFFF";
+SIGNAL DATAIN,instruction, imm : STD_LOGIC_VECTOR(31 DOWNTO 0):= "00000000000000000000000000000000";
 SIGNAL ADDRESS : STD_LOGIC_VECTOR(7 DOWNTO 0):= "00000000";
 SIGNAL decoded_instruction : STRING(1 TO 100);
+signal opcode, funct7 : std_logic_vector(6 downto 0);
+signal funct3 : std_logic_vector(2 downto 0);
+signal rd, rs1, rs2 : std_logic_vector(4 downto 0);
 SIGNAL W_R : STD_LOGIC:='0';
 SIGNAL DATAOUT : STD_LOGIC_VECTOR(31 DOWNTO 0);
 SIGNAL address_counter : integer := 0; -- Initialize the counter
@@ -28,10 +31,16 @@ COMPONENT RAM IS
          );
 END COMPONENT;
 
-Component InstructionDecoder IS
-    PORT (
-        instruction : IN  STD_LOGIC_VECTOR(31 DOWNTO 0); -- Input machine code
-        decoded_instruction : OUT STRING(1 TO 100) -- Decoded instruction output
+Component decoder IS
+    Port (
+        instruction : in std_logic_vector(31 downto 0);  -- 32-bit RV32i instruction
+        opcode      : out std_logic_vector(6 downto 0);  -- Primary opcode field
+        funct3      : out std_logic_vector(2 downto 0);  -- Secondary function field
+        funct7      : out std_logic_vector(6 downto 0);  -- Additional function field
+        rd          : out std_logic_vector(4 downto 0);  -- Destination register
+        rs1         : out std_logic_vector(4 downto 0);  -- Source register 1
+        rs2         : out std_logic_vector(4 downto 0);  -- Source register 2
+        imm         : out std_logic_vector(31 downto 0)  -- Immediate value (varies by instruction)
     );
 END Component;
 
@@ -41,7 +50,7 @@ BEGIN
 
   -- Connect DUT
   UUT: RAM PORT MAP(DATAIN, ADDRESS, W_R, DATAOUT);
-  UUA: InstructionDecoder PORT MAP(instruction, decoded_instruction);
+  UUA: decoder PORT MAP(instruction, opcode, funct3, funct7, rd, rs1, rs2, imm);
   
   PROCESS
   
@@ -54,7 +63,7 @@ BEGIN
 
   while not endfile(text_file) loop
   	readline(text_file, text_line);
-    hread(text_line, data, ok);
+    read(text_line, data, ok);
   	DATAIN <= data;
     ADDRESS <= std_logic_vector(to_unsigned(address_counter, ADDRESS'length));
     address_counter <= address_counter + 1;
@@ -70,7 +79,6 @@ BEGIN
     for i in 0 to address_counter loop
     ADDRESS <= std_logic_vector(to_unsigned(i, ADDRESS'length));
     instruction <= DATAOUT;
-    report "test: " & string'image(decoded_instruction);
     wait for 100 ns;
     end loop;
     
